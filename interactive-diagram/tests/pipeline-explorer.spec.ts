@@ -87,12 +87,13 @@ test("example runs trace mock inputs through method branches", async ({ page }) 
   const viewport = page.viewportSize();
   const compactExamplePanel = Boolean(viewport && viewport.width <= 960);
 
-  await expect(exampleSelect).toHaveValue("np-default-ensemble");
+  await expect(exampleSelect).toHaveValue("");
   if (!compactExamplePanel) {
-    await expect(page.getByText("Mock A: Nanopore default ensemble")).toBeVisible();
+    await expect(page.getByText("Mock propagation examples")).toBeVisible();
+    await expect(page.getByText("Mock A: Nanopore default ensemble")).toHaveCount(0);
   }
-  await expect(page.locator(".node-card.example-active")).not.toHaveCount(0);
-  await expect(page.locator(".flow-edge.example-edge")).not.toHaveCount(0);
+  await expect(page.locator(".node-card.example-active")).toHaveCount(0);
+  await expect(page.locator(".flow-edge.example-edge")).toHaveCount(0);
 
   await exampleSelect.selectOption("np-extended-myloasm-diffcov");
   await expect(exampleSelect).toHaveValue("np-extended-myloasm-diffcov");

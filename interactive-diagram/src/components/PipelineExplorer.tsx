@@ -59,7 +59,7 @@ export function PipelineExplorer() {
   const [stage, setStage] = useState("All");
   const [selectedId, setSelectedId] = useState("binette");
   const [selectedEdgeId, setSelectedEdgeId] = useState<string>();
-  const [selectedExampleId, setSelectedExampleId] = useState<string>("np-default-ensemble");
+  const [selectedExampleId, setSelectedExampleId] = useState<string>("");
   const [fitSignal, setFitSignal] = useState(0);
   const [detailPanelWidth, setDetailPanelWidth] = useState(DETAIL_PANEL_DEFAULT_WIDTH);
   const [isResizingDetail, setIsResizingDetail] = useState(false);
