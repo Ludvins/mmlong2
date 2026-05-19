@@ -1,0 +1,178 @@
+### Method Summary
+
+COMEBin appears in mmlong2's extended binning branch. mmlong2 prepares round-specific contigs and BAM subsets, then runs `run_comebin.sh`. This node represents COMEBin's neural representation learning, data augmentation, and NT-Xent loss. The downstream `COMEBin Leiden clustering` node shows how those embeddings become candidate bins.
+
+<div className="local-vs-upstream">
+  <div>
+    <h4>mmlong2-configured</h4>
+    <ul>
+      <li><code>-a round_{"{n}"}/contigs.fasta</code></li>
+      <li><code>-p round_{"{n}"}/mapping</code></li>
+      <li><code>-b min(number_of_contigs, 1024)</code></li>
+      <li>threads inherited from <code>proc</code></li>
+    </ul>
+  </div>
+  <div>
+    <h4>upstream-default</h4>
+    <ul>
+      <li>six-view data augmentation</li>
+      <li>Coverage network and Combine network weights</li>
+      <li>temperature, epochs, early stopping</li>
+      <li>Leiden parameter sweep and result selection</li>
+    </ul>
+  </div>
+</div>
+
+### Views and Feature Vectors
+
+COMEBin constructs six views for each original contig: one original view plus five augmented views from randomly extracted continuous fragments. It builds both composition and coverage features.
+
+<div className="formula-card">
+
+$$
+{F}_{i}=({f}_{i,1},\ldots,{f}_{i,136})
+$$
+
+$$
+{q}_{i,j}=
+\frac{{f}_{i,j}^{\prime}}
+{\sum_{k=1}^{136}{f}_{i,k}^{\prime}},
+\quad
+{f}_{i,j}^{\prime}={f}_{i,j}+1
+$$
+
+$$
+\mathbf{x}_{i}^{(com)}
+=
+[{q}_{i,1},\ldots,{q}_{i,136}]
+$$
+
+</div>
+
+The COMEBin paper uses tetramer features with reverse complements treated as equivalent, giving 136 composition dimensions.
+
+For coverage, COMEBin concatenates mean and standard-deviation coverage vectors over `M` samples:
+
+<div className="formula-card">
+
+$$
+\mathbf{C}_{i}
+=
+\left(
+\mathbf{C}_{i}^{(mean)},\,
+\mathbf{C}_{i}^{(std)}
+\right)
+$$
+
+$$
+x_{i,j}^{(cov)}
+=
+\frac{c_{i,m}^{\prime}}
+{\max_{k=1}^{N} c_{k,m}^{\prime}},
+\quad
+c_{i,m}^{\prime}=c_{i,m}+10^{-5}
+$$
+
+</div>
+
+`N` is the number of contigs. In mmlong2, COMEBin sees the BAMs in `round_{n}/mapping`, after `Comebin_prep_*` has subset alignments to active contigs for that round.
+
+### Networks
+
+COMEBin uses two feed-forward modules:
+
+<div className="method-grid">
+  <div className="method-card">
+    <strong>Coverage network</strong>
+    Takes coverage features and maps variable sample coverage into embedded coverage representations.
+  </div>
+  <div className="method-card">
+    <strong>Combine network</strong>
+    Normalizes coverage-network outputs, concatenates them with k-mer features, and outputs heterogeneous contig embeddings.
+  </div>
+</div>
+
+### Multi-View NT-Xent Objective
+
+For two views, COMEBin defines an NT-Xent pair loss:
+
+<div className="formula-card">
+
+$$
+\ell(\mathbf{z}_{i,k},\mathbf{z}_{i,k'})
+=
+-\log
+\frac{
+\exp(\cos(\mathbf{z}_{i,k},\mathbf{z}_{i,k'})/\tau)
+}{
+\sum_{s=1}^{N_{bs}}
+\left[
+\mathbb{1}_{[s\ne i]}
+\exp(\cos(\mathbf{z}_{i,k},\mathbf{z}_{s,k})/\tau)
++
+\exp(\cos(\mathbf{z}_{i,k},\mathbf{z}_{s,k'})/\tau)
+\right]
+}
+$$
+
+$$
+\cos(\mathbf{a},\mathbf{b})
+=
+\frac{\mathbf{a}^{T}\mathbf{b}}
+{|\mathbf{a}|\,|\mathbf{b}|}
+$$
+
+</div>
+
+The full six-view loss used by COMEBin is:
+
+<div className="formula-card">
+
+$$
+\mathcal{L}
+=
+-\frac{1}{N_{bs}V(V-1)}
+\sum_{i=1}^{N_{bs}}
+\sum_{v=1}^{V}
+\sum_{\substack{v_1=1\\v_1\ne v}}^{V}
+\log
+\frac{
+\exp(\cos(\mathbf{z}_{i,v},\mathbf{z}_{i,v_1})/\tau)
+}{
+\exp(\cos(\mathbf{z}_{i,v},\mathbf{z}_{i,v_1})/\tau)
++
+\sum_{j=1}^{N_{bs}}
+\sum_{v_2=1}^{V}
+\mathbb{1}_{[j\ne i]}
+\exp(\cos(\mathbf{z}_{i,v},\mathbf{z}_{j,v_2})/\tau)
+}
+$$
+
+</div>
+
+The paper uses `V = 6`, `batch size = 1024`, 200 training epochs with early stopping, and `tau = 0.07` for assemblies with N50 above 10,000 bp, otherwise `tau = 0.15`. mmlong2 mirrors the batch-size ceiling by passing `-b min(number_of_contigs, 1024)`.
+
+### Leiden Clustering Handoff
+
+After training, the `COMEBin Leiden clustering` node builds a nearest-neighbor graph from contig embeddings and converts distances to similarities:
+
+<div className="formula-card">
+
+$$
+S_{ij}
+=
+\exp
+\left(
+\frac{
+-\left\|\mathbf{x}_i-\mathbf{x}_j\right\|^2
+}{\sigma}
+\right)
+$$
+
+</div>
+
+COMEBin sweeps sigma values `{0.05, 0.1, 0.15, 0.2, 0.3}`, Leiden resolutions `{1, 5, 10, 30, 50, 70, 90, 110}`, and edge-retention ratios `{50%, 80%, 100%}`. It estimates bin quality for each result and chooses the result with the best aggregate quality signal.
+
+### Role in mmlong2
+
+In mmlong2, COMEBin is a round-specific candidate binner in extended mode. Its output flows into CheckM2 round filtering rather than Binette in round 2, according to `get_qc_in()` and `get_qc_dir()`.

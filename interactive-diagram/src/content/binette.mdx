@@ -1,0 +1,99 @@
+### Method Summary
+
+Binette is the ensemble selector used by mmlong2 in default binning rounds. It consumes bin directories from VAMB, MetaBAT2, and SemiBin2, predicts bin quality with CheckM2, derives/refines candidate bins, and writes the final per-round Binette bin set.
+
+This is a different use of "ensemble" from SemiBin2's long-read DBSCAN ensemble. Binette ensembles **different binner outputs**; SemiBin2 ensembles **different DBSCAN epsilon clusterings inside one tool**.
+
+<div className="local-vs-upstream">
+  <div>
+    <h4>mmlong2-configured</h4>
+    <ul>
+      <li><code>-d vamb/bins metabat2 semibin/output_bins</code></li>
+      <li><code>-c round_{"{n}"}/contigs.fasta</code></li>
+      <li><code>-w 5</code></li>
+      <li><code>-m 90</code> in extended round 1; otherwise <code>-m 50</code></li>
+      <li><code>PYTHONHASHSEED=15690701</code></li>
+    </ul>
+  </div>
+  <div>
+    <h4>upstream-default</h4>
+    <ul>
+      <li>candidate refinement internals</li>
+      <li>CheckM2 model choice for quality prediction</li>
+      <li>temporary-file reuse and protein prediction behavior</li>
+      <li>final selected-bin naming inside Binette</li>
+    </ul>
+  </div>
+</div>
+
+### Candidate Inputs
+
+mmlong2's `Binning_binette` rule requires all three upstream binners to finish first:
+
+- VAMB: `round_{n}/vamb/vae_clusters_unsplit.tsv` and `round_{n}/vamb/bins`
+- MetaBAT2: `round_{n}/metabat2/bins_metabat2.MemberMatrix.txt` and FASTA bins
+- SemiBin2: `round_{n}/semibin/bins_info.tsv` and `round_{n}/semibin/output_bins`
+- active contigs: `round_{n}/contigs.fasta`
+
+The actual command is:
+
+```bash
+binette -d $dir/vamb/bins $dir/metabat2 $dir/semibin/output_bins \
+  -c round_{n}/contigs.fasta \
+  -o $dir/binette \
+  -w 5 \
+  -m {50_or_90} \
+  -t {threads}
+```
+
+### Quality Score
+
+Binette reports CheckM2-derived completeness and contamination, then computes a configurable score. mmlong2 sets the contamination weight to `5`.
+
+<div className="formula-card">
+
+$$
+\operatorname{score}(b)
+=
+\operatorname{completeness}(b)
+-
+\operatorname{contamination}(b)\cdot w
+$$
+
+$$
+w_{\mathrm{mmlong2}} = 5
+$$
+
+</div>
+
+This is the exact score definition documented by Binette. It is also aligned with mmlong2's later final CheckM score gate.
+
+### Outputs Used by mmlong2
+
+Binette writes:
+
+- `final_bins_quality_reports.tsv`
+- `final_bins/`
+- `final_contig_to_bin.tsv`
+- `input_bins_quality_reports/`
+- `temporary_files/`
+
+The next rule, `Binning_qc`, uses `final_bins_quality_reports.tsv` specially: because Binette has already run CheckM2-like quality reporting, mmlong2 cuts columns `1,4,5` from that report instead of rerunning CheckM2 for that branch.
+
+### Round Thresholds
+
+The `-m` value passed to Binette comes from:
+
+<div className="formula-card">
+
+$$
+m_{\mathrm{Binette}} =
+\begin{cases}
+90, & \text{round 1 and binmode = extended}\\
+50, & \text{otherwise}
+\end{cases}
+$$
+
+</div>
+
+After Binette, the selected bins still have to pass mmlong2's CheckM2 round thresholds and final CheckM thresholds before they reach `results/bins`.

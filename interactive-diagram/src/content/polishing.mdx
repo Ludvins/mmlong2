@@ -1,0 +1,17 @@
+## Optional Medaka Polishing
+
+Polishing is Nanopore-only in the wrapper. If PacBio HiFi reads are supplied, the wrapper forces `medaka_status = FALSE` before launching Snakemake.
+
+The polishing workflow splits linear contigs into batches, runs Medaka consensus per split, and stitches polished contigs back into `tmp/polishing/asm_pol.fasta`. Circular contigs and split bookkeeping are handled before consensus generation so the final FASTA can still flow into curation and filtering.
+
+### Exact mmlong2 Defaults
+
+- `medaka_status = FALSE`
+- `medaka_split = 30`
+- `medaka_usage = 10`
+- `medaka_batch = 200`
+- `medak_mod_pol = r1041_e82_400bps_sup_v5.0.0`
+
+### Interpretation
+
+Medaka is a post-assembly consensus correction step, not an assembler and not a binning model. It changes the nucleotide sequence supplied to downstream curation, filtering, coverage, and annotation. Because it is optional, downstream panels should always describe their input as the selected assembly: curated if curation is enabled, polished if Nanopore polishing is enabled and curation is skipped, or raw assembler output otherwise.

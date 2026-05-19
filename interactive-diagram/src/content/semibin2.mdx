@@ -1,0 +1,170 @@
+### Method Summary
+
+SemiBin2 is best understood here as a self-supervised representation-learning method inside a complete upstream binning command. mmlong2 calls `SemiBin2 single_easy_bin`, so the tool still emits bins; the methodological center of this node is the learned contig embedding. The downstream `SemiBin2 DBSCAN integration` node shows how that embedding becomes concrete bins.
+
+<div className="local-vs-upstream">
+  <div>
+    <h4>mmlong2-configured</h4>
+    <ul>
+      <li><code>--self-supervised</code></li>
+      <li><code>--sequencing-type long_read</code></li>
+      <li><code>--orf-finder prodigal</code></li>
+      <li><code>--engine cpu</code>, <code>--compression none</code></li>
+      <li><code>-m 3000</code>, <code>--minfasta-kbs 250</code></li>
+      <li><code>--random-seed 15690701</code></li>
+    </ul>
+  </div>
+  <div>
+    <h4>upstream-default</h4>
+    <ul>
+      <li>model depth, dropout, optimizer, and training schedule</li>
+      <li>low-level DBSCAN implementation details not surfaced by mmlong2</li>
+      <li>marker-gene quality estimator beyond the published formulas</li>
+      <li>pretrained environment behavior when an environment is supplied</li>
+    </ul>
+  </div>
+</div>
+
+### Feature Preprocessing
+
+The SemiBin2 paper represents each contig by tetramer frequencies and estimated abundance. For mmlong2, abundance is derived from the BAMs or coverage files created by `Coverage_map`.
+
+<div className="formula-card">
+
+$$
+\mathbf{x}_i =
+\left[
+\operatorname{tetramer}_i,\,
+f(\mathbf{a}_i)
+\right]
+$$
+
+$$
+f(a)=
+\begin{cases}
+\log(a), & N < 5\ \text{and long-read data}\\
+\dfrac{a}{100\left\lceil a_{\mathrm{mean}}/100 \right\rceil}, & 5 \le N \le 20\\
+\dfrac{a}{\sum_i a_i}, & N > 20
+\end{cases}
+$$
+
+</div>
+
+`N` is the number of abundance samples, `a_mean` is the mean abundance value, and `a_i` is the abundance for sample `i`. In a typical mmlong2 long-read run with only the primary read set, the first branch is the relevant one. Differential coverage can increase `N`.
+
+### Self-Supervised Constraint Generation
+
+SemiBin2 generates must-link and cannot-link pairs before neural training:
+
+- must-link: longer contigs are simulated as split fragments; paired fragments from the same source contig should embed close together.
+- cannot-link: randomly sampled contig pairs are treated as negative pairs.
+- training cap: the number of cannot-link constraints is limited to
+
+<div className="formula-card">
+
+$$
+n_{\mathrm{cannot}} =
+\min(m, 4{,}000{,}000)
+$$
+
+</div>
+
+where `m` is the number of must-link constraints.
+
+### Siamese Network and Loss
+
+The paper states that the first two neural-network layers are followed by batch normalization, leaky ReLU, and dropout:
+
+<div className="formula-card">
+
+$$
+H(\mathbf{x}) =
+\operatorname{Dropout}
+\left(
+\operatorname{LeakyReLU}
+\left(
+\operatorname{BN}(W\mathbf{x}+\mathbf{b})
+\right)
+\right)
+$$
+
+</div>
+
+The embedding is 100-dimensional in the paper:
+
+<div className="formula-card">
+
+$$
+H(\mathbf{x}) \in \mathbb{R}^{100}
+$$
+
+</div>
+
+The supervised contrastive loss used for must-link and cannot-link pairs is:
+
+<div className="formula-card">
+
+$$
+\mathcal{L}
+=
+\frac{1}{|M \cup C|}
+\sum_{(\mathbf{x}_1,\mathbf{x}_2)\in M\cup C}
+\left[
+y\,d\left(H(\mathbf{x}_1),H(\mathbf{x}_2)\right)^2
++
+(1-y)\,
+\max
+\left\{
+1-d\left(H(\mathbf{x}_1),H(\mathbf{x}_2)\right),
+0
+\right\}^2
+\right]
+$$
+
+</div>
+
+`M` is the must-link set, `C` is the cannot-link set, `d` is Euclidean distance, and `y=1` marks must-link pairs while `y=0` marks cannot-link pairs.
+
+### Long-Read Clustering Handoff
+
+mmlong2 explicitly passes `--sequencing-type long_read`, so the long-read clustering path matters. The diagram shows that as the next node. Conceptually, SemiBin2 runs DBSCAN over learned embeddings with this epsilon grid:
+
+<div className="formula-card">
+
+$$
+\epsilon \in
+\{0.01, 0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55\}
+$$
+
+</div>
+
+SemiBin2 then integrates all DBSCAN results with 107 single-copy marker genes. If a candidate bin has `G` total marker hits and `N` distinct marker genes:
+
+<div className="formula-card">
+
+$$
+\operatorname{completeness} =
+\frac{N}{107}
+$$
+
+$$ 
+\operatorname{contamination} =
+\frac{G-N}{G}
+$$
+
+$$
+F_1 =
+\frac{
+2\cdot\operatorname{completeness}\cdot(1-\operatorname{contamination})
+}{
+\operatorname{completeness} + (1-\operatorname{contamination})
+}
+$$
+
+</div>
+
+The published greedy integration loop tests contamination cutoffs `0.1, 0.2, 0.3, 0.4, 0.5, 1`, repeatedly selecting the best remaining bin by F1 and removing its contigs from other candidate bins.
+
+### Role in mmlong2
+
+In the diagram, this SemiBin2 node sits in the Embedding layer because the neural method is the mapping from contig features to a learned representation. The `SemiBin2 DBSCAN integration` node is the binning-side step that turns those embeddings into `bins_info.tsv` and `output_bins`. In `fast` binmode, the resulting SemiBin2 candidate bins can be the direct input to CheckM2 round filtering. In `default` and most extended rounds, SemiBin2 contributes one candidate bin directory to Binette alongside VAMB and MetaBAT2.

@@ -1,0 +1,136 @@
+## Binning QC and Final MAG Selection
+
+mmlong2 uses two quality gates after candidate binning: a per-round CheckM2-style filter and a final CheckM lineage filter. This means binner output is never accepted solely because a method produced it.
+
+### Round-Specific CheckM2 Filter
+
+`get_qc_in()` chooses which candidate source is evaluated:
+
+| mode or round | candidate source |
+| --- | --- |
+| `fast` | SemiBin2 `bins_info.tsv` and `output_bins` |
+| extended round 2 | COMEBin `comebin_res.tsv` and `comebin_res_bins` |
+| extended round 4 | MetaBAT2 `bins_metabat2.MemberMatrix.txt` and FASTA bins |
+| default / other rounds | Binette `final_bins_quality_reports.tsv` and `final_bins` |
+
+The diagram shows this with a separate source-selector node because it is not a linear dependency:
+
+<div className="formula-card">
+
+$$
+\operatorname{qc\_source}(r,\text{binmode}) =
+\begin{cases}
+\text{SemiBin2}, & \text{binmode = fast}\\
+\text{COMEBin}, & \text{binmode = extended and } r=2\\
+\text{MetaBAT2}, & \text{binmode = extended and } r=4\\
+\text{Binette}, & \text{otherwise}
+\end{cases}
+$$
+
+</div>
+
+The per-round keep rule is:
+
+<div className="formula-card">
+
+$$
+\operatorname{keep}_{round}(b)
+=
+\mathbb{1}
+\left[
+C_{CheckM2}(b)\ge C_{min}
+\right]
+\cdot
+\mathbb{1}
+\left[
+K_{CheckM2}(b)\le K_{max}
+\right]
+$$
+
+</div>
+
+where `C` is completeness and `K` is contamination.
+
+### Exact mmlong2 Thresholds
+
+<div className="method-grid">
+  <div className="method-card">
+    <strong>Extended round 1</strong>
+    Completeness at least <code>90</code>; contamination at most <code>5</code>.
+  </div>
+  <div className="method-card">
+    <strong>Default, fast, and other extended rounds</strong>
+    Completeness at least <code>50</code>; contamination at most <code>10</code>.
+  </div>
+</div>
+
+These values come from `get_compl()` and `get_cont()`:
+
+<div className="formula-card">
+
+$$
+C_{min} =
+\begin{cases}
+90, & \text{round 1 and binmode = extended}\\
+50, & \text{otherwise}
+\end{cases}
+$$
+
+$$
+K_{max} =
+\begin{cases}
+5, & \text{round 1 and binmode = extended}\\
+10, & \text{otherwise}
+\end{cases}
+$$
+
+</div>
+
+### Aggregation Before Final CheckM
+
+`Binning_aggregate` copies kept bins from singleton recovery and all binning rounds into `tmp/binning/bins_innit`, then concatenates matching CheckM2 rows into `tmp/binning/checkm2.tsv`.
+
+This is the join point that makes the graph non-linear:
+
+<div className="formula-card">
+
+$$
+\text{MAG candidates}
+=
+\text{kept singleton bins}
+\cup
+\bigcup_{r \in \text{active rounds}}
+\text{kept round-}r\text{ bins}
+$$
+
+</div>
+
+Singletons therefore bypass MetaBAT2/VAMB/SemiBin2/COMEBin/Binette, but they do not bypass the final CheckM gate.
+
+### Final CheckM Gate
+
+`Binning_qc2` runs:
+
+```bash
+checkm lineage_wf -x fa -t {threads} \
+  -f tmp/binning/checkm1.tsv \
+  --pplacer_threads $(({threads} / 2)) \
+  --reduced_tree --tab_table \
+  tmp/binning/bins_innit tmp/binning/checkm1
+```
+
+The final keep expression is exactly the AWK filter in `src/mmlong2-lite.smk`:
+
+<div className="formula-card">
+
+$$
+C_{CheckM}(b) \ge 50
+\quad\land\quad
+K_{CheckM}(b) \le 10
+\quad\land\quad
+C_{CheckM}(b) - 5K_{CheckM}(b) > 30
+$$
+
+</div>
+
+Bins passing that final expression are copied to `results/bins`.

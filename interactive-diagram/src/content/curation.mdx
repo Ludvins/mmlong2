@@ -1,0 +1,27 @@
+## Assembly Curation
+
+The curation block screens the selected assembly for evidence of misassembly. It maps reads back to contigs, detects suspicious low-coverage or clipping patterns, aggregates those intervals, and writes a curated FASTA plus updated assembly info.
+
+### Signal Model
+
+mmlong2 does not train a statistical model here. It applies rule-based thresholds to read-mapping evidence. Conceptually, each candidate interval is judged from local support:
+
+$$
+\text{keep}(r) =
+\mathbb{1}[\text{coverage}(r) \ge c_{\min}]
+\cdot
+\mathbb{1}[\text{clip support}(r) < \rho]
+$$
+
+where the concrete thresholds are the mmlong2 config values below.
+
+### Exact mmlong2 Defaults
+
+- `curation_status = TRUE`
+- `min_dist = 500`
+- `min_len_zerocov = 100`
+- `clip_ratio = 0.9`
+- `min_cov_clip = 3`
+- `min_cov_clip_all = 3`
+
+The important implementation detail is that curation changes both sequence and metadata. Later circular-contig extraction and binning rely on the curated assembly info when curation is enabled.

@@ -1,0 +1,62 @@
+### What This Node Separates
+
+This node is still part of mmlong2's `Binning_comebin` rule. mmlong2 runs `run_comebin.sh`, and COMEBin performs both representation learning and clustering internally. The diagram separates the two phases because COMEBin first learns multi-view contig embeddings and then clusters them with a graph-based Leiden procedure.
+
+### From Embeddings to a Graph
+
+The embedding node produces a representation for each contig after COMEBin's six-view contrastive training. This node represents the clustering side:
+
+<div className="formula-card">
+
+$$
+Z = \{z_i\}_{i=1}^{n}
+$$
+
+$$
+S_{ij}
+=
+\exp
+\left(
+\frac{
+-\lVert z_i-z_j\rVert^2
+}{\sigma}
+\right)
+$$
+
+</div>
+
+COMEBin turns the embedding distances into a similarity graph, then clusters that graph with Leiden. The COMEBin paper describes a sweep over graph and Leiden settings rather than a single fixed partition.
+
+### Parameter Sweep
+
+The COMEBin paper describes sweeps over:
+
+| parameter family | values described in the paper |
+| --- | --- |
+| similarity scale `sigma` | `0.05, 0.1, 0.15, 0.2, 0.3` |
+| Leiden resolution | `1, 5, 10, 30, 50, 70, 90, 110` |
+| edge-retention ratio | `50%, 80%, 100%` |
+
+mmlong2 does not expose those sweep values as local config keys. It configures the round-specific FASTA, round-specific BAM directory, thread count, and batch-size ceiling:
+
+```bash
+run_comebin.sh \
+  -a round_{n}/contigs.fasta \
+  -o round_{n}/comebin \
+  -t {threads} \
+  -p round_{n}/mapping \
+  -b min(number_of_contigs, 1024)
+```
+
+### Outputs Used by mmlong2
+
+COMEBin writes:
+
+- `round_{n}/comebin/comebin_res/comebin_res.tsv`
+- `round_{n}/comebin/comebin_res/comebin_res_bins`
+
+In mmlong2's `extended` mode, `get_qc_in()` and `get_qc_dir()` route COMEBin's `round_2` output directly to `Binning_qc`. It does not feed Binette in that round.
+
+### How This Differs From Binette
+
+COMEBin clustering is internal to COMEBin: it clusters COMEBin embeddings with a Leiden graph procedure. Binette is later and cross-method: it consumes already-created candidate bin directories from multiple binners and refines/selects among them.

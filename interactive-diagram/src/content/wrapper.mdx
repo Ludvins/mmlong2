@@ -1,0 +1,29 @@
+## Wrapper Runtime
+
+The Bash wrapper is the only user-facing executable. It parses CLI flags, validates inputs, normalizes paths to absolute paths, configures temporary/cache directories, and invokes Snakemake twice: first for MAG production, then for MAG analysis.
+
+The production command passes runtime choices as Snakemake `--config` overrides. This means the YAML files hold defaults, but the actual run state is the combination of defaults plus CLI flags.
+
+### Runtime Decisions
+
+- `--nanopore_reads` and `--pacbio_reads` are mutually intended primary-read modes. The wrapper writes one `fastq` path and one `mode` into the Snakemake config.
+- `--coverage` is optional. When present, it is appended to the primary-read manifest and produces extra per-read mapping/depth jobs.
+- `--install_databases` is an early database-installation branch. Without it, database paths are checked later before the processing workflow runs.
+- If `--conda_envs_only` is absent, mmlong2 uses prebuilt Singularity containers and binds the current directory, temporary directory, read directories, output location, and database directories.
+- If `--conda_envs_only` is set, the wrapper points `env_1` through `env_14` at the local Conda environment YAML files.
+- If `--run_until` selects an early stage, the wrapper maps that stage to a Snakemake rule and disables later processing where needed.
+- PacBio HiFi mode forces `medaka_status = FALSE`.
+
+### Path and Cache Preprocessing
+
+Relative output names are split into `loc` and `sample`. Relative FASTQ, temporary, and coverage paths are expanded against the working directory. The wrapper also sets:
+
+```bash
+PYTHONPYCACHEPREFIX
+TMPDIR
+SNAKEMAKE_SOURCE_CACHE
+SNAKEMAKE_OUTPUT_CACHE
+XDG_CACHE_HOME
+```
+
+Those settings keep Python/Snakemake cache and temporary files near the run directory instead of spreading state across the host.

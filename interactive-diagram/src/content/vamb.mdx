@@ -1,0 +1,122 @@
+### Method Summary
+
+VAMB is the variational autoencoder branch of mmlong2's default binning ensemble. mmlong2 does not train or tune VAMB directly; it calls `vamb bin default` and passes the round FASTA, the reduced abundance table, seed, minimum contig length, minimum bin size, and threads. This node represents the VAE/latent representation part; the downstream `VAMB latent clustering` node shows how those latent vectors become candidate bins.
+
+<div className="local-vs-upstream">
+  <div>
+    <h4>mmlong2-configured</h4>
+    <ul>
+      <li><code>--fasta round_{"{n}"}/contigs.fasta</code></li>
+      <li><code>--abundance_tsv round_{"{n}"}/cov_sub.tsv</code></li>
+      <li><code>-m 3000</code>, <code>--minfasta 250000</code></li>
+      <li><code>--seed 15690701</code>, <code>-o ""</code></li>
+    </ul>
+  </div>
+  <div>
+    <h4>upstream-default</h4>
+    <ul>
+      <li>network architecture</li>
+      <li>optimizer, epochs, and early stopping</li>
+      <li>reconstruction weighting and KL weighting</li>
+      <li>latent-space clustering parameters</li>
+    </ul>
+  </div>
+</div>
+
+### Encoder Inputs
+
+VAMB's documented input types are k-mer composition and abundance. In mmlong2, the abundance side comes from `Coverage_aggregate`, specifically `cov_all_sub.tsv`.
+
+<div className="formula-card">
+
+$$
+\mathbf{x}_i =
+\left[
+\mathbf{k}_i,\,
+\mathbf{a}_i
+\right]
+$$
+
+$$
+\mathbf{a}_i =
+\left[
+d_{i,1}, d_{i,2}, \ldots, d_{i,m}
+\right]
+$$
+
+</div>
+
+Here, `i` indexes a contig, `k_i` is its composition feature vector, and `a_i` is its abundance vector over the primary and differential-coverage read sets. mmlong2 prepares that table; VAMB decides how to normalize and feed it into its model.
+
+### VAE Encoder and Latent Representation
+
+VAMB encodes each contig into a latent representation `z`. The standard VAE form is:
+
+<div className="formula-card">
+
+$$
+q_\phi(\mathbf{z}_i \mid \mathbf{x}_i)
+=
+\mathcal{N}
+\left(
+\boldsymbol{\mu}_\phi(\mathbf{x}_i),
+\operatorname{diag}(\boldsymbol{\sigma}^2_\phi(\mathbf{x}_i))
+\right)
+$$
+
+$$
+\mathbf{z}_i =
+\boldsymbol{\mu}_\phi(\mathbf{x}_i)
++
+\boldsymbol{\sigma}_\phi(\mathbf{x}_i) \odot \boldsymbol{\epsilon},
+\quad
+\boldsymbol{\epsilon} \sim \mathcal{N}(0, I)
+$$
+
+</div>
+
+`mu_phi` and `sigma_phi` are produced by the encoder. The reparameterization line is the usual VAE trick that lets gradients pass through stochastic sampling.
+
+### Loss Terms
+
+The diagram shows the VAE objective at the level needed to reason about mmlong2 outputs. The exact coefficients are upstream VAMB defaults for the installed VAMB package.
+
+<div className="formula-card">
+
+$$
+\mathcal{L}_i =
+\lambda_k\,\mathcal{L}_k(\mathbf{k}_i,\hat{\mathbf{k}}_i)
++
+\lambda_a\,\mathcal{L}_a(\mathbf{a}_i,\hat{\mathbf{a}}_i)
++
+\lambda_{KL}\,
+D_{KL}
+\left(
+q_\phi(\mathbf{z}_i\mid\mathbf{x}_i)
+\parallel
+\mathcal{N}(0,I)
+\right)
+$$
+
+$$
+D_{KL}
+\left(
+\mathcal{N}(\boldsymbol{\mu},\operatorname{diag}(\boldsymbol{\sigma}^2))
+\parallel
+\mathcal{N}(0,I)
+\right)
+=
+\frac{1}{2}
+\sum_\ell
+\left(
+\mu_\ell^2+\sigma_\ell^2-\log\sigma_\ell^2-1
+\right)
+$$
+
+</div>
+
+The first two terms reconstruct sequence composition and abundance. The KL term regularizes the latent space toward a unit Gaussian prior, making the embedding smoother for clustering.
+
+### Clustering Handoff
+
+The `VAMB latent clustering` node writes `vae_clusters_unsplit.tsv` and a `bins/` directory. In mmlong2 default mode, those bins are one proposal set for Binette beside MetaBAT2 and SemiBin2. They are not accepted directly unless downstream Binette, CheckM2, and final CheckM gates keep them.

@@ -1,0 +1,23 @@
+## Taxonomic Classification
+
+The processing workflow classifies bins, contigs, and recovered rRNA sequences.
+
+### Bin Taxonomy
+
+`Taxonomy_bins` runs GTDB-Tk `classify_wf` over `results/bins/*.fa`. The wrapper must bind the GTDB database path and the Snakefile sets `GTDBTK_DATA_PATH`.
+
+### Contig Taxonomy
+
+`Taxonomy_contigs` runs Metabuli on the final assembly FASTA and keeps a simplified table of contig IDs and lineage assignments.
+
+### 16S rRNA Taxonomy
+
+`Taxonomy_rrna` uses Barrnap to extract rRNA sequences, keeps the configured SSU type, links each rRNA sequence back to its bin when possible, and classifies sequences with Usearch against the rRNA database.
+
+Exact defaults:
+
+- `ssu = 16S`
+- `min_len_ssu = 500`
+- `min_id_ssu = 0.75`
+
+The aggregate rule merges GTDB and rRNA-based taxonomy for bins and Metabuli/rRNA taxonomy for contigs.

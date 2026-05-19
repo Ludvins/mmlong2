@@ -1,0 +1,25 @@
+## Annotation
+
+The annotation block adds structural and functional genome annotations to accepted bins.
+
+### rRNA and tRNA Counts
+
+`Annotation_rrna` runs Barrnap per bin and summarizes 16S, 23S, and 5S counts. `Annotation_trna` runs tRNAscan-SE per bin and summarizes total and unique tRNA calls.
+
+Exact defaults:
+
+- `db_barrnap = arc`
+- `db_trnascan = A`
+- `trnascan_usage = 2`
+
+### Bakta
+
+`Annotation_bins` runs Bakta in metagenome mode:
+
+```bash
+bakta --db {db_bakta} --keep-contig-headers --meta --force ...
+```
+
+`bakta_extra = FALSE` by default, but the wrapper exposes `--extra_bakta` and converts spaces to comma-delimited config text before the Snakefile converts commas back into command arguments.
+
+The aggregate output `bins_annotation.tsv` later contributes coding density, CDS counts, tRNA counts, and rRNA counts to the final bin dataframe.

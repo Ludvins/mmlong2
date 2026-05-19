@@ -1,0 +1,40 @@
+## Single-Contig Genome Recovery
+
+mmlong2 extracts candidate single-contig genomes before multi-contig binning. This gives circular and long high-quality single contigs a bypass around iterative multi-contig binning, but not around final MAG evaluation: kept singleton bins are later copied into the shared `tmp/binning/bins_innit` pool and pass through final CheckM filtering with the other candidate MAGs.
+
+### Candidate Classes
+
+- Circular candidates come from assembler/assembly-info circularity metadata.
+- Linear candidates are large contigs that pass length and quality thresholds.
+- If no candidates are found, mmlong2 keeps the largest prokaryotic contig as a fallback candidate so downstream directory assumptions still hold.
+
+### QC Gate
+
+`Singletons_qc` runs CheckM2 and keeps candidates with separate thresholds for circular and linear singletons:
+
+$$
+\text{keep}_{circ} = C_{CheckM2} \ge 80 \land K_{CheckM2} \le 10
+$$
+
+$$
+\text{keep}_{lin} = C_{CheckM2} \ge 90 \land K_{CheckM2} \le 10
+$$
+
+where `C` is completeness and `K` is contamination.
+
+### Exact mmlong2 Defaults
+
+- `min_smag_len = 1000000`
+- `min_compl_circ = 80`
+- `min_compl_lin = 90`
+- `min_cont_singl = 10`
+
+### Downstream Routing
+
+`Singletons_qc` writes both kept FASTA files and bookkeeping files:
+
+- `tmp/binning/singl/bins/*.fa`
+- `tmp/binning/singl/bins_keep.txt`
+- `tmp/binning/singl/binned.txt`
+
+`Binning_prep_innit` uses `binned.txt` to remove recovered single-contig genomes from round-1 multi-contig binning. Later, `Binning_aggregate` copies `tmp/binning/singl/bins/*.fa` together with the kept round bins into `tmp/binning/bins_innit` before `Binning_qc2` runs final CheckM.

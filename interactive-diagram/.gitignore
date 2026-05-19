@@ -1,0 +1,7 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+vite-dev.log
+vite-dev.err.log
+*.tsbuildinfo

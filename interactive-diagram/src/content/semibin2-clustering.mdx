@@ -1,0 +1,104 @@
+### What This Node Separates
+
+This node is still part of the single mmlong2 rule `Binning_semibin2`; mmlong2 does **not** launch a second shell command after SemiBin2 representation learning. The diagram separates it because SemiBin2 contains two different conceptual phases:
+
+1. learn a contig representation with self-supervised contrastive learning;
+2. convert that representation into concrete candidate bins.
+
+The second phase is the part referred to as the **ensemble-based DBSCAN** long-read clustering algorithm in the SemiBin2 paper.
+
+### Ensemble of What?
+
+The ensemble members are not different upstream binners. They are multiple DBSCAN clusterings of the same SemiBin2 embedding, using different values of the DBSCAN neighborhood radius `epsilon`.
+
+<div className="formula-card">
+
+$$
+Z = \{z_i = H(x_i)\}_{i=1}^{n}
+$$
+
+$$
+\mathcal{C}_{\epsilon}
+=
+\operatorname{DBSCAN}(Z;\epsilon)
+$$
+
+$$
+\mathcal{E}_{\mathrm{SemiBin2}}
+=
+\{\mathcal{C}_{\epsilon} : \epsilon \in \Lambda\}
+$$
+
+</div>
+
+For long-read mode, the SemiBin2 paper gives this epsilon grid:
+
+<div className="formula-card">
+
+$$
+\Lambda =
+\{0.01,0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,0.55\}
+$$
+
+</div>
+
+So the phrase “DBSCAN ensemble” means: **one learned embedding, many DBSCAN runs with different epsilon values, then an integration step**.
+
+### Marker-Gene Integration
+
+SemiBin2 integrates candidate clusters using 107 single-copy marker genes. For a candidate bin:
+
+<div className="formula-card">
+
+$$
+\operatorname{completeness}=\frac{N}{107}
+$$
+
+$$
+\operatorname{contamination}=\frac{G-N}{G}
+$$
+
+$$
+F_1 =
+\frac{
+2 \cdot \operatorname{completeness} \cdot (1-\operatorname{contamination})
+}{
+\operatorname{completeness} + (1-\operatorname{contamination})
+}
+$$
+
+</div>
+
+`N` is the number of distinct marker genes represented in the candidate bin, and `G` is the total marker hits in that candidate. SemiBin2 greedily selects high-scoring bins and removes selected contigs from competing candidates during integration.
+
+### How This Differs From Binette
+
+This node is an **internal SemiBin2 ensemble**:
+
+| ensemble | members | selected output |
+| --- | --- | --- |
+| SemiBin2 DBSCAN ensemble | DBSCAN results from different epsilon values over SemiBin2 embeddings | `round_{n}/semibin/output_bins` |
+| Binette ensemble refinement | bin directories from VAMB, MetaBAT2, and SemiBin2 | `round_{n}/binette/final_bins` |
+
+That is why the diagram now shows `SemiBin2 representation model -> SemiBin2 DBSCAN integration -> Candidate bin sets`, and then separately shows `Candidate bin sets -> Binette ensemble refinement`.
+
+### mmlong2 Wiring
+
+mmlong2 invokes this through one command:
+
+```bash
+SemiBin2 single_easy_bin \
+  -i round_{n}/contigs.fasta \
+  -b {bam_inputs} \
+  -o round_{n}/semibin \
+  --self-supervised \
+  --sequencing-type long_read \
+  --orf-finder {semibin_prot}
+```
+
+The artifacts consumed downstream are:
+
+- `round_{n}/semibin/bins_info.tsv`
+- `round_{n}/semibin/output_bins`
+
+In `fast` binmode, those SemiBin2 bins can be evaluated directly by CheckM2. In `default`, they are one member of the Binette cross-method ensemble beside MetaBAT2 and VAMB.

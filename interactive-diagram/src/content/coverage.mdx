@@ -1,0 +1,82 @@
+## Coverage Matrix Construction
+
+Coverage is the bridge from preprocessing to binning. mmlong2 builds a read manifest, maps each read set against `tmp/filtering/asm_filt_len.fasta`, summarizes contig depths, and pastes deterministic per-read columns into combined matrices.
+
+### Read Manifest and Symlinks
+
+`Coverage_prep` writes the primary read first, then appends the optional differential-coverage CSV. It creates stable numbered symlinks:
+
+```text
+1-NP.lnk
+2-PB.lnk
+3-IL.lnk
+```
+
+Those IDs propagate into BAM names, TSV names, and final matrix column order. If `reads_diffcov = none`, only the primary long-read symlink is present.
+
+### Mapping Presets and Identity Filters
+
+<div className="method-grid">
+  <div className="method-card">
+    <strong>Nanopore</strong>
+    <code>minimap_np = lr:hq</code>, identity <code>95</code>.
+  </div>
+  <div className="method-card">
+    <strong>PacBio HiFi</strong>
+    <code>minimap_pb = map-hifi</code>, identity <code>97</code>.
+  </div>
+  <div className="method-card">
+    <strong>Illumina</strong>
+    <code>minimap_il = sr</code>, identity <code>97</code>.
+  </div>
+  <div className="method-card">
+    <strong>Memory chunks</strong>
+    <code>-I 50G</code> and <code>-K 10G</code> from config defaults.
+  </div>
+</div>
+
+The mapping rule pipes minimap2 into samtools and removes flags with `samtools view -F 2308` before sorting and indexing:
+
+```bash
+minimap2 -I {minimap_ram}G -K {minimap_ref}G -t {threads} \
+  -ax {preset} asm_filt_len.fasta reads.lnk |
+samtools view --threads $(({threads} / 2)) -Sb -F 2308 - |
+samtools sort --threads $(({threads} / 2)) --write-index -o reads.bam##idx##reads.bam.bai -
+```
+
+Depths are then produced with:
+
+```bash
+jgi_summarize_bam_contig_depths reads.bam \
+  --percentIdentity {identity} \
+  --outputDepth reads.tsv
+```
+
+### Matrix Columns
+
+`Coverage_map` makes two trimmed tables for each read set:
+
+- `_tr1.tsv`: columns `1,2,3,4,5` for the primary read set, otherwise `4,5`.
+- `_tr2.tsv`: columns `1,4` for the primary read set, otherwise `4`.
+
+`Coverage_aggregate` then performs sorted paste operations:
+
+```bash
+paste -d "\t" $(ls -v *_tr1.tsv) > cov_all.tsv
+paste -d "\t" $(ls -v *_tr2.tsv) | sed "s/contigName/contigname/" > cov_all_sub.tsv
+```
+
+### Binner-Specific Use
+
+<div className="formula-card">
+
+$$
+\mathbf{a}_i =
+\left[
+d_{i,1}, d_{i,2}, \ldots, d_{i,m}
+\right]
+$$
+
+</div>
+
+`cov_all.tsv` is the richer MetaBAT2-style coverage table. `cov_all_sub.tsv` is the reduced abundance table passed to VAMB. SemiBin2 and COMEBin receive BAM-derived inputs directly in the mmlong2 commands.

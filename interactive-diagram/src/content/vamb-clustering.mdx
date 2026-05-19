@@ -1,0 +1,60 @@
+### What This Node Separates
+
+This node is still part of the single mmlong2 rule `Binning_vamb`; mmlong2 does **not** run a separate command after VAMB's VAE. The diagram separates it because VAMB contains two conceptual phases:
+
+1. encode contigs into a latent representation from composition and abundance;
+2. cluster that latent representation into candidate genome bins.
+
+The first phase is shown as `VAMB VAE embedding`. This node is the binning-side handoff that creates VAMB's cluster table and FASTA bin directory.
+
+### Latent-Space Binning
+
+Let `x_i` be the VAMB input feature vector for contig `i`, containing k-mer composition plus abundance over samples. The embedding node learns:
+
+<div className="formula-card">
+
+$$
+z_i \sim q_\phi(z_i \mid x_i)
+$$
+
+</div>
+
+This node represents the upstream VAMB clustering step:
+
+<div className="formula-card">
+
+$$
+\mathcal{B}_{\mathrm{VAMB}}
+=
+\operatorname{Cluster}_{\mathrm{VAMB}}
+\left(
+\{z_i\}_{i=1}^{n}
+\right)
+$$
+
+</div>
+
+The exact clustering thresholds and search behavior are upstream VAMB defaults for the installed package. mmlong2 configures the command-level constraints that affect which contigs and output bins are eligible:
+
+- `-m 3000`: minimum contig length passed to VAMB.
+- `--minfasta 250000`: minimum FASTA/bin size passed to VAMB.
+- `--seed 15690701`: reproducibility seed.
+
+### Outputs Used by mmlong2
+
+VAMB writes:
+
+- `round_{n}/vamb/vae_clusters_unsplit.tsv`
+- `round_{n}/vamb/bins`
+
+`Binning_binette` uses both the cluster table and the `bins/` directory as one member of its cross-method ensemble. VAMB bins are not final MAGs at this point; they are candidate bins that must still pass Binette, CheckM2 round filtering, aggregation, and the final CheckM gate.
+
+### How This Differs From SemiBin2 and Binette
+
+| node | members being grouped | output |
+| --- | --- | --- |
+| VAMB latent clustering | VAMB latent vectors `z_i` | `round_{n}/vamb/bins` |
+| SemiBin2 DBSCAN integration | DBSCAN clusterings from multiple epsilon values over SemiBin2 embeddings | `round_{n}/semibin/output_bins` |
+| Binette ensemble refinement | bin directories from VAMB, MetaBAT2, and SemiBin2 | `round_{n}/binette/final_bins` |
+
+So VAMB's clustering is internal to VAMB, while Binette's ensemble is a later cross-binner refinement step.

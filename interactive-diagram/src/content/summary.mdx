@@ -1,0 +1,23 @@
+## Lite Summary Outputs
+
+The production workflow ends by calculating bin coverage, relative abundance, assembly statistics, and resource usage.
+
+### Coverage and Abundance
+
+`Summary_coverage` uses CoverM over accepted bin FASTAs and the primary-read BAMs:
+
+- `cov_method = mean`
+- relative abundance is calculated as a separate CoverM metric
+
+### Bin Statistics
+
+`Summary_stats` runs QUAST over final bins and creates a contig-to-bin map. The `Finalise` rule merges:
+
+- CheckM
+- CheckM2
+- QUAST
+- CoverM coverage
+- CoverM relative abundance
+- workflow metadata
+
+The key production output is `results/{sample}_bins.tsv`, which is later enriched by the processing workflow.

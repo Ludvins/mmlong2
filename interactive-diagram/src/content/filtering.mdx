@@ -1,0 +1,35 @@
+## Filtering and Domain Separation
+
+Filtering happens in two layers. First, `Filtering_length` removes short contigs and normalizes headers. Then either Tiara or Whokaryote classifies contigs at a broad domain level so mmlong2 can retain the prokaryotic assembly for MAG recovery.
+
+### Length and Header Preprocessing
+
+The exact mmlong2 default is `min_contig_len = 3000`. Headers are normalized with `seqkit replace` so downstream tools see stable contig identifiers prefixed with the sample name.
+
+### Domain Split
+
+Tiara is the default (`tiara_status = TRUE`). `--use_whokaryote` flips the workflow to Whokaryote. Tiara output is post-processed into two sorted header lists:
+
+- prokaryote-like labels: `prokarya`, `bacteria`, `archaea`, and `unknown`
+- eukaryote-like labels: `eukarya`, `organelle`, and `unknown`
+
+Because `unknown` appears in both lists, ambiguous contigs can be preserved for inspection instead of silently discarded. The production binning path uses `tmp/filtering/asm_filt_prok.fasta`.
+
+The graph now shows this as a real branch/merge:
+
+<div className="formula-card">
+
+$$
+\text{asm\_filt\_len}
+\rightarrow
+\begin{cases}
+\text{Tiara header lists}, & \text{tiara\_status = TRUE}\\
+\text{Whokaryote header lists}, & \text{tiara\_status = FALSE}
+\end{cases}
+\rightarrow
+\{\text{asm\_filt\_prok},\text{asm\_filt\_euk}\}
+$$
+
+</div>
+
+`Filtering_eukaryotes` is the merge point: it receives whichever header-list pair was selected by `get_prok()` and `get_euk()`, then writes the prokaryotic FASTA for MAG recovery and the eukaryotic/ambiguous FASTA as a side output.

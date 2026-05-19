@@ -1,0 +1,97 @@
+### Method Summary
+
+MetaBAT2 is the graph-based, non-neural binner in the mmlong2 ensemble. It receives the round FASTA plus the full coverage table `cov.tsv`, writes FASTA bins, and writes `bins_metabat2.MemberMatrix.txt` for downstream Binette/QC logic.
+
+<div className="local-vs-upstream">
+  <div>
+    <h4>mmlong2-configured</h4>
+    <ul>
+      <li><code>-i round_{"{n}"}/contigs.fasta</code></li>
+      <li><code>-a round_{"{n}"}/cov.tsv</code></li>
+      <li><code>-m 3000</code>, <code>-s 250000</code></li>
+      <li><code>--saveCls</code>, <code>--seed 15690701</code></li>
+    </ul>
+  </div>
+  <div>
+    <h4>upstream-default</h4>
+    <ul>
+      <li>TNF and abundance score distributions</li>
+      <li>adaptive score normalization</li>
+      <li>edge cutoffs and graph partitioning details</li>
+      <li>additional binning of lost/small contigs</li>
+    </ul>
+  </div>
+</div>
+
+### Features
+
+MetaBAT2 combines tetranucleotide-frequency similarity and abundance similarity. mmlong2's `Coverage_map` creates per-read depth files, and `Coverage_aggregate` pastes them into the `cov.tsv` table consumed here.
+
+<div className="formula-card">
+
+$$
+\mathbf{x}_i =
+\left[
+\operatorname{TNF}_i,\,
+\mathbf{a}_i
+\right]
+$$
+
+$$
+\mathbf{a}_i =
+\left[
+d_{i,1}, d_{i,2}, \ldots, d_{i,m}
+\right]
+$$
+
+</div>
+
+### Adaptive Composite Score
+
+The MetaBAT2 paper states that raw TNF and abundance scores are normalized, then combined. With fewer than three effective abundance samples, the composite score is:
+
+<div className="formula-card">
+
+$$
+w =
+\frac{n_{ABD}}{n_{ABD}+1}
+$$
+
+$$
+S =
+\operatorname{TNF}^{1-w}
+\operatorname{ABD}^{w}
+$$
+
+</div>
+
+where `n_ABD` is the number of effective abundance samples. The more effective samples there are, the more weight the abundance score receives.
+
+When at least three samples are available, MetaBAT2 also calculates an abundance-correlation score `COR` and uses:
+
+<div className="formula-card">
+
+$$
+S =
+\sqrt{
+\operatorname{TNF}^{1-w}
+\operatorname{ABD}^{w}
+\operatorname{COR}
+}
+$$
+
+</div>
+
+`S` becomes an edge weight in graph-based clustering.
+
+### Graph Partitioning
+
+MetaBAT2 first builds a graph with contigs as nodes using strong TNF edges. It then iteratively incorporates high-scoring `S` edges and partitions the graph with a modified label-propagation algorithm. The published modifications are important for interpreting reproducibility:
+
+- search order is driven by edge strength, so partitioning is deterministic rather than random;
+- previous-round partition labels seed the next round;
+- Fisher's method evaluates likely contig membership across neighborhoods using `1 - S` as p-values.
+
+### Role in mmlong2
+
+In default binmode, MetaBAT2 is not the final arbiter. Its FASTA bins and membership matrix are one input to Binette. In extended mode, round 4 can use MetaBAT2 output directly for the CheckM2 round filter through `get_qc_in()` and `get_qc_dir()`.

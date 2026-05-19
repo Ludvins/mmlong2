@@ -1,0 +1,116 @@
+## Iterative Binning Preparation
+
+The binning prep rules define exactly which contigs a binner is allowed to see in each round. This is the control layer that prevents later rounds from repeatedly rebinding contigs already accepted by QC.
+
+### Round Logic
+
+<div className="formula-card">
+
+$$
+\operatorname{rounds}(\operatorname{binmode}) =
+\begin{cases}
+\{1\}, & \operatorname{binmode}\in\{\text{fast},\text{default}\}\\
+\{1,2,3,4\}, & \operatorname{binmode}=\text{extended}
+\end{cases}
+$$
+
+</div>
+
+`fast` and `default` stop after `round_1`. `extended` is the only mode that creates `round_2`, `round_3`, and `round_4`. The later rounds are not independent repeats of the whole workflow; each later round starts from the contigs that were still unbinned after the previous round's CheckM2 filter.
+
+### Mental Model
+
+Think of the iterative binning loop as:
+
+1. Create a current-round FASTA and coverage tables.
+2. Run one or more binners on exactly those current-round contigs.
+3. Pick the candidate source for that round according to `binmode` and `round`.
+4. Evaluate those candidate bins with CheckM2.
+5. Write the contig IDs inside bins that passed QC to `round_{r}/binned.txt`.
+6. For the next round, remove those accepted contigs from the eligible contig universe.
+
+The important correction is that a failed or rejected candidate bin does **not** remove its contigs from the next round. Only contigs inside bins copied to `round_{r}/bins/` after CheckM2 filtering are subtracted.
+
+### Round 1 Inputs
+
+`Binning_prep_innit` starts from the filtered prokaryotic assembly:
+
+- `tmp/filtering/asm_filt_prok.fasta`
+- `tmp/binning/mapping/cov_all.tsv`
+- `tmp/binning/mapping/cov_all_sub.tsv`
+
+It writes:
+
+- `tmp/binning/round_1/contigs.fasta`
+- `tmp/binning/round_1/cov.tsv`
+- `tmp/binning/round_1/cov_sub.tsv`
+- `tmp/binning/round_1/contigs.txt`
+
+The exact first-round contig set is:
+
+<div className="formula-card">
+
+$$
+E_1 =
+\{c \in \operatorname{prokaryotic\_contigs}: \operatorname{cov}_{sub}(c) \ge \operatorname{min\_contig\_cov}\}
+\setminus
+\operatorname{singleton\_accepted}
+$$
+
+</div>
+
+In the Snakefile this is implemented as `cov_all_sub.tsv` filtering by `min_contig_cov`, then `comm -23` against `tmp/binning/singl/binned.txt`, then `seqkit grep` against `tmp/filtering/asm_filt_prok.fasta`.
+
+### Later-Round Exclusion
+
+For rounds after 1, mmlong2 computes remaining contigs as a set difference:
+
+<div className="formula-card">
+
+$$
+\operatorname{remaining}_{r}
+=
+\operatorname{contigs}_{r-1}
+\setminus
+\operatorname{binned}_{r-1}
+$$
+
+</div>
+
+Here, `binned_{r-1}` means the contig IDs inside bins that survived the previous round's CheckM2 thresholding. The Snakefile uses `comm -23` over sorted IDs, then subsets FASTA plus both coverage matrices with `seqkit grep` and `awk`.
+
+### Which Round Uses Which Candidate Source?
+
+`Binning_qc` does not always evaluate the same directory. The helper functions `get_qc_in()` and `get_qc_dir()` choose the candidate source:
+
+| binmode | active rounds | CheckM2-evaluated source |
+| --- | --- | --- |
+| `fast` | `round_1` only | SemiBin2 directly: `round_1/semibin/bins_info.tsv` and `round_1/semibin/output_bins` |
+| `default` | `round_1` only | Binette refined output: `round_1/binette/final_bins_quality_reports.tsv` and `round_1/binette/final_bins` |
+| `extended` | `round_1` | Binette refined output, but with the stricter round-1 thresholds from `min_compl_1` and `min_cont_1` |
+| `extended` | `round_2` | COMEBin directly: `round_2/comebin/comebin_res/comebin_res.tsv` and `round_2/comebin/comebin_res/comebin_res_bins` |
+| `extended` | `round_3` | Binette refined output again, using the remaining contigs after round 2 |
+| `extended` | `round_4` | MetaBAT2 directly: `round_4/metabat2/bins_metabat2.MemberMatrix.txt` and `round_4/metabat2` |
+
+### Round Ladder
+
+For `extended`, the loop can be read like this:
+
+| step | eligible contigs | candidate source evaluated by CheckM2 | output that controls the next step |
+| --- | --- | --- | --- |
+| `round_1` | prokaryotic, coverage-filtered contigs minus accepted singletons | Binette over MetaBAT2 + VAMB + SemiBin2 candidates | `round_1/binned.txt` |
+| `round_2` | `round_1/contigs.txt - round_1/binned.txt` | COMEBin candidates | `round_2/binned.txt` |
+| `round_3` | `round_2/contigs.txt - round_2/binned.txt` | Binette over round-3 candidates | `round_3/binned.txt` |
+| `round_4` | `round_3/contigs.txt - round_3/binned.txt` | MetaBAT2 candidates | `round_4/binned.txt` |
+
+Then `Binning_aggregate` collects kept bins from `singl`, `round_1`, `round_2`, `round_3`, and `round_4` when those directories exist, and concatenates the corresponding CheckM2 rows into `tmp/binning/checkm2.tsv`.
+
+### COMEBin-Specific Prep
+
+COMEBin needs BAMs rather than only pasted coverage matrices. The `Comebin_prep_*` rules subset BAM alignments to the active round contigs so the COMEBin run receives only the contigs that are still eligible for that round.
+
+SemiBin2 is another small special case: `get_semibin_cov()` uses all mapping BAMs when there is no differential coverage file. With differential coverage enabled, `round_3` uses only the primary `1-*` BAM plus the configured SemiBin environment, while other rounds use all BAMs.
+
+### Why This Matters
+
+The method nodes are not independent black boxes. Every binner sees the same active contig universe within a round, and later rounds are conditioned on earlier CheckM2 acceptance. That is why the diagram routes all binners through `Binning_qc` before final aggregation.

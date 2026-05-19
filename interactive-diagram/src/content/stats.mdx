@@ -1,0 +1,29 @@
+## Read, Assembly, and Mapping Statistics
+
+The processing stats stage calculates summary values that are independent of the binning algorithm internals.
+
+### Sequence Stats
+
+`Stats_seq` uses Nanoq for reads and contigs. `Stats_aggregate` keeps read counts, yield, N50, length extrema, mean/median lengths, and mean/median quality where available.
+
+### Mapping Stats
+
+`Stats_map` uses Cramino over the primary-read alignment. mmlong2 records:
+
+- mean coverage
+- mapped yield in Gbp
+- median read identity
+- mean read identity
+
+### Final General Table
+
+The processing `Finalise` rule computes derived values such as:
+
+$$
+\operatorname{yield\_assembled}
+=
+100 \cdot
+\frac{\operatorname{map\_yield\_gbp} \cdot 10^9}{\operatorname{reads\_yield\_bp}}
+$$
+
+and uses bin relative abundance to estimate binned yield.

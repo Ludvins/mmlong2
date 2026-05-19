@@ -1,0 +1,83 @@
+## Candidate Bin Sets
+
+This layer separates method representation from the actual bin candidates that mmlong2 passes forward. The upstream tools do not all mean the same thing by "binning": some first learn an embedding, some score distances directly, and then each tool emits a membership table or FASTA bin directory.
+
+### What Arrives Here
+
+| source | representation step | bin-generation step | mmlong2 artifact |
+| --- | --- | --- | --- |
+| MetaBAT2 | abundance + tetranucleotide-frequency statistics | graph/partitioning over contig similarity | `round_{n}/metabat2/*.fa` |
+| VAMB | VAE latent code from k-mer and abundance features | VAMB latent clustering | `round_{n}/vamb/bins` |
+| SemiBin2 | self-supervised contig embedding from sequence and coverage features | SemiBin2-internal DBSCAN epsilon ensemble plus marker-gene integration | `round_{n}/semibin/output_bins` |
+| COMEBin | multi-view contrastive contig embedding | COMEBin graph + Leiden clustering | `round_{n}/comebin/comebin_res/comebin_res_bins` |
+
+### Why Embedding Methods Are Split Into Two Nodes
+
+The neural binners in this part of the graph now share the same visible structure:
+
+| embedding node | binning node | conceptual handoff |
+| --- | --- | --- |
+| `VAMB VAE embedding` | `VAMB latent clustering` | latent vectors become VAMB bins |
+| `SemiBin2 representation model` | `SemiBin2 DBSCAN integration` | contrastive embeddings become DBSCAN/marker-integrated bins |
+| `COMEBin contrastive embedding` | `COMEBin Leiden clustering` | multi-view embeddings become Leiden bins |
+
+In mmlong2 the command is still a complete binner:
+
+```bash
+SemiBin2 single_easy_bin ...
+```
+
+The reason the diagram places the first SemiBin2 node in the Embedding layer is methodological. The paper's central model is the mapping
+
+<div className="formula-card">
+
+$$
+H_\theta(\mathbf{x}_i) = \mathbf{z}_i
+$$
+
+</div>
+
+from contig features `x_i` to an embedding `z_i`. The later `SemiBin2 DBSCAN integration` node is the upstream SemiBin2 long-read binning phase: it runs DBSCAN several times with different epsilon values, integrates the results with marker genes, and emits the concrete candidate bins.
+
+This is different from Binette. SemiBin2's ensemble members are DBSCAN clusterings over the same embedding; Binette's ensemble members are whole candidate bin sets from different binners.
+
+### Routing In mmlong2
+
+The candidate source depends on binning mode and round:
+
+<div className="method-grid">
+  <div className="method-card">
+    <strong>fast</strong>
+    SemiBin2 candidates can go directly to CheckM2 round evaluation.
+  </div>
+  <div className="method-card">
+    <strong>default</strong>
+    MetaBAT2, VAMB, and SemiBin2 candidates feed Binette ensemble refinement.
+  </div>
+  <div className="method-card">
+    <strong>extended</strong>
+    COMEBin and later-round MetaBAT2 candidates can be evaluated directly in specific rounds.
+  </div>
+  <div className="method-card">
+    <strong>refined path</strong>
+    Binette selects or recombines candidates before CheckM2 evaluation.
+  </div>
+</div>
+
+### Separation Of Concerns
+
+<div className="formula-card">
+
+$$
+\text{features}
+\rightarrow
+\text{embedding or distance model}
+\rightarrow
+\text{candidate bins}
+\rightarrow
+\text{CheckM2/CheckM evaluation}
+$$
+
+</div>
+
+This is the conceptual split used by the diagram: embedding is the learned representation, binning is the production or refinement of candidate genome bins, and evaluation is the quality gate that decides which candidate bins survive.

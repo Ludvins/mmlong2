@@ -1,0 +1,26 @@
+## Extra QC
+
+Extra QC adds two signals that are not part of the core MAG recovery loop: nucleotide microdiversity and chimerism/contamination evidence.
+
+### Variant-Based Microdiversity
+
+mmlong2 prepares contig FASTA slices, extracts relevant alignments from the primary-read BAM, and calls variants with Longshot.
+
+Exact defaults:
+
+- `min_cov = 6`
+- `min_mapq = 18`
+- `min_frac = 0.1`
+- `min_count = 3`
+
+The final tables report variant counts and variant percentage at contig and bin levels:
+
+$$
+\operatorname{var\_perc}_{bin}
+=
+100 \cdot \frac{\operatorname{var\_n}_{bin}}{\operatorname{genome\_size}_{bin}}
+$$
+
+### GUNC
+
+`ExtraQC_contamination` runs GUNC over accepted bins and records clade separation score, reference representation score, and pass/fail status.

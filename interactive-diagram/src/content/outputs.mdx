@@ -1,0 +1,26 @@
+## Final Dataframes
+
+The final processing rule merges the production and processing outputs into analysis-ready tables.
+
+### Main Outputs
+
+- `results/{sample}_general.tsv`
+- `results/{sample}_contigs.tsv`
+- `results/{sample}_bins.tsv`
+- `results/{sample}_usage.tsv`
+- `results/dependencies.csv`
+- `results/databases.csv`
+- `results/bins/*.fa`
+- `results/bakta/`
+
+### Bin Quality Status
+
+mmlong2 assigns `bin_status` using CheckM2 completeness/contamination plus annotation completeness signals. A high-quality bin needs high completeness, low contamination, sufficient tRNA uniqueness, and rRNA evidence. Medium and low quality are then assigned by relaxed completeness and contamination thresholds; otherwise the bin is marked contaminated.
+
+The final tables include workflow metadata:
+
+- `wf_name`
+- `wf_read_mode`
+- `wf_binning_mode`
+- `wf_v`
+- `wf_date`

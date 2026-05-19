@@ -1,0 +1,84 @@
+## Inputs and Preprocessing Contract
+
+mmlong2 starts from one primary long-read FASTQ and an optional differential-coverage table. The wrapper normalizes the run into Snakemake config values before the workflow starts.
+
+### Read Modes
+
+The two primary read flags are a switch, not parallel inputs. A normal run should provide one primary long-read file:
+
+<div className="method-grid">
+  <div className="method-card">
+    <strong>Nanopore path</strong>
+    <code>--nanopore_reads</code> sets <code>mode = Nanopore-simplex</code> and uses <code>NP</code> as the primary read type.
+  </div>
+  <div className="method-card">
+    <strong>PacBio path</strong>
+    <code>--pacbio_reads</code> sets <code>mode = PacBio-HiFi</code> and uses <code>PB</code> as the primary read type.
+  </div>
+</div>
+
+<div className="formula-card">
+
+$$
+(\texttt{fastq}, \texttt{mode}, \texttt{read\_type}) =
+\begin{cases}
+(\texttt{--nanopore\_reads}, \text{Nanopore-simplex}, \text{NP}) \\
+(\texttt{--pacbio\_reads}, \text{PacBio-HiFi}, \text{PB})
+\end{cases}
+$$
+
+</div>
+
+The wrapper requires `fastq != none`, checks that the file exists, and normalizes it to an absolute path. The mode later controls minimap2 presets, identity filters, and Medaka behavior. PacBio-HiFi forces Medaka polishing off in the wrapper. If both primary flags are supplied, the Bash parser stores one final `fastq`/`mode` assignment according to argument order; the intended interface is to provide one primary read mode.
+
+### Differential Coverage CSV
+
+The optional CSV has no header and each row is a read type plus a path:
+
+```text
+PB,/path/to/hifi.fastq
+NP,/path/to/nanopore.fastq.gz
+IL,/path/to/short-read.fastq.gz
+```
+
+Allowed labels are exactly `PB`, `NP`, and `IL`. The wrapper checks that every listed file exists and binds the read directories into Singularity/Apptainer. In the Snakefile, `get_reads()` prepends the primary read file and creates stable IDs:
+
+<div className="formula-card">
+
+$$
+\operatorname{reads} =
+\left[
+1\text{-primary},
+2\text{-extra},
+\ldots,
+n\text{-extra}
+\right]
+$$
+
+</div>
+
+Those stable IDs become filenames for symlinks, BAMs, per-read coverage TSVs, and matrix columns.
+
+This is an optional fan-in, not an alternative to the primary FASTQ: the primary read file is always row `1-*`, and coverage rows become additional mapping jobs only when `reads_diffcov != none`.
+
+### Path and Config Normalization
+
+The wrapper sets or overrides these production config keys:
+
+- `sample`
+- `loc`
+- `fastq`
+- `mode`
+- `reads_diffcov`
+- `proc`
+- `assembler`
+- `binmode`
+- `apptainer_status`
+
+Default values come from `src/mmlong2-lite-config.yaml`, including `proc = 3`, `assembler = metaflye`, `binmode = default`, and `reads_diffcov = none`.
+
+### Database Inputs
+
+The lite workflow can stop after MAG recovery. The processing workflow requires GTDB-Tk, Bakta, rRNA, Metabuli, and GUNC databases. `--install_databases` downloads/configures those paths; otherwise the processing Snakefile checks the supplied `db_*` paths before taxonomy, annotation, and extra QC.
+
+Database inputs are therefore optional for a production-only run and required for the processing workflow. They are not selected instead of read inputs.

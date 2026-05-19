@@ -1,0 +1,45 @@
+## Assembly Selection
+
+mmlong2 supports four mutually exclusive assembly paths. The wrapper selects them through `assembler`, and the Snakefile resolves the active assembly with `get_assembler()` and `get_assembly()`.
+
+### Branch/Merge Logic
+
+The diagram separates the assembler choice from the downstream selected artifact. Only one of the four assembler/import rules is active for a run, but downstream rules all consume the selected assembly path:
+
+<div className="formula-card">
+
+$$
+\text{assembly}_{selected}
+\in
+\{\text{metaFlye},\text{metaMDBG},\text{myloasm},\text{custom}\}
+$$
+
+</div>
+
+After selection, the workflow can branch again:
+
+- if Medaka is enabled, the selected assembly goes through `Polishing_prep`, split `Polishing_consensus` jobs, and `Polishing_stitch`;
+- if Medaka is disabled, curation can consume the selected assembly directly;
+- if `curation_status = FALSE`, `Filtering_length` consumes either the selected assembly or the polished assembly directly.
+
+### metaFlye
+
+metaFlye is the default assembler. mmlong2 configures `flye_cov = 3` and `flye_ovlp = 0`; the wrapper exposes these as `--flye_min_cov` and `--flye_min_ovlp`. The expected assembly FASTA is `tmp/assembly/assembly.fasta`.
+
+### metaMDBG
+
+metaMDBG is selected with `--use_metamdbg`. Its expected FASTA is `tmp/assembly/contigs.fasta`. In the mmlong2 graph, metaMDBG usually bypasses Medaka because PacBio mode disables polishing.
+
+### myloasm
+
+myloasm is selected with `--use_myloasm`. mmlong2 configures:
+
+- `myloasm_cov = 1`
+- `myloasm_ovlp = 500`
+- `myloasm_extra = FALSE` unless `--extra_myloasm` is supplied
+
+The wrapper converts spaces in `--extra_myloasm` into comma-delimited config text, and the Snakefile converts commas back into shell arguments.
+
+### Custom Assembly
+
+`--custom_assembly` imports a user FASTA. An optional metaFlye-style assembly info table can be supplied with `--custom_assembly_info`. This path is important for reproducibility because later curation, circularity, and coverage steps expect assembly metadata even when the contigs did not come from an mmlong2 assembler.
