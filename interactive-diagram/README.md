@@ -21,4 +21,10 @@ npm.cmd run test
 npm.cmd run test:e2e
 ```
 
+## GitHub Pages
+
+The fork deploys this static app through `.github/workflows/deploy-interactive-diagram.yml`.
+After GitHub Pages is enabled with the `GitHub Actions` source, pushes to `main` publish the
+built diagram from `interactive-diagram/dist`.
+
 The app is static and documentation-only. It does not execute mmlong2, inspect run outputs, or require a backend.

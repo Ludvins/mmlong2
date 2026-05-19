@@ -1,0 +1,64 @@
+name: Deploy interactive diagram
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-interactive-diagram.yml"
+      - "interactive-diagram/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  pages: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: interactive-diagram/package-lock.json
+
+      - name: Install dependencies
+        working-directory: interactive-diagram
+        run: npm ci
+
+      - name: Run unit tests
+        working-directory: interactive-diagram
+        run: npm run test
+
+      - name: Build static site
+        working-directory: interactive-diagram
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: interactive-diagram/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
