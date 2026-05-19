@@ -285,19 +285,27 @@ test("legend uses separate rows and avoids zoom and minimap controls", async ({ 
       Math.min(a.right, b.right) > Math.max(a.left, b.left) &&
       Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
 
-    const legendRect = rectFor(".legend");
-    const controlsRect = rectFor(".react-flow__controls");
-    const minimapRect = rectFor(".react-flow__minimap");
+      const legendRect = rectFor(".legend");
+      const controlsRect = rectFor(".react-flow__controls");
+      const minimapRect = rectFor(".react-flow__minimap");
+      const paneRect = rectFor(".pipeline-flow");
 
-    return {
-      overlapsControls: Boolean(legendRect && controlsRect && overlaps(legendRect, controlsRect)),
-      overlapsMinimap: Boolean(legendRect && minimapRect && overlaps(legendRect, minimapRect))
-    };
+      return {
+        bottomDelta: legendRect && controlsRect ? Math.abs(legendRect.bottom - controlsRect.bottom) : undefined,
+        gapFromControls: legendRect && controlsRect ? legendRect.left - controlsRect.right : undefined,
+        legendBottomGap: legendRect && paneRect ? paneRect.bottom - legendRect.bottom : undefined,
+        overlapsControls: Boolean(legendRect && controlsRect && overlaps(legendRect, controlsRect)),
+        overlapsMinimap: Boolean(legendRect && minimapRect && overlaps(legendRect, minimapRect))
+      };
+    });
+
+    expect(boxes.overlapsControls).toBe(false);
+    expect(boxes.overlapsMinimap).toBe(false);
+    expect(boxes.legendBottomGap).toBeLessThanOrEqual(24);
+    expect(boxes.bottomDelta).toBeLessThanOrEqual(8);
+    expect(boxes.gapFromControls).toBeGreaterThanOrEqual(8);
+    expect(boxes.gapFromControls).toBeLessThanOrEqual(40);
   });
-
-  expect(boxes.overlapsControls).toBe(false);
-  expect(boxes.overlapsMinimap).toBe(false);
-});
 
 test("zoom controls sit in the bottom left corner", async ({ page }) => {
   await page.goto("/");
